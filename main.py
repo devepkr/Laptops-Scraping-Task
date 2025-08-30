@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 BASE_TIMEOUT = 3000
 RETRY_WAIT = 2
 
-
 def retry_with_logging(func):
     async def retry_connection(*args, **kwargs):
         min_attempt_cnt = 1
@@ -39,7 +38,6 @@ def retry_with_logging(func):
 
     return retry_connection
 
-
 class LaptopsScraper:
     def __init__(self, url):
         self.url = url
@@ -47,6 +45,7 @@ class LaptopsScraper:
 
     @retry_with_logging
     async def make_requests(self, browser):
+        logger.info("***** make_requests *****")
         page = await browser.new_page()
         try:
             logger.info(f"Navigating to {self.url}")
@@ -59,6 +58,7 @@ class LaptopsScraper:
 
     @retry_with_logging
     async def extract_data_from_page(self, page):
+        logger.info("***** extract_data_from_page *****")
         try:
             await page.wait_for_selector('div[class="card thumbnail"]', timeout=10000)
             laptops_items = await page.locator('div[class="card thumbnail"]').all()
@@ -99,6 +99,7 @@ class LaptopsScraper:
 
     @retry_with_logging
     async def get_pagination(self, page):
+        logger.info("***** get_pagination *****")
         page_count = 1
         while True:
             try:
@@ -128,40 +129,42 @@ class LaptopsScraper:
         logger.info(f"Scraped {len(self.collected_laptops_data)} products from {page_count} pages.")
 
     @retry_with_logging
-    async def get_product_description(self, browser, product):
-        detail_page = await browser.new_page()
+    async def get_product_description(self, browser, each_product_url):
+        logger.info("***** get_product_description *****")
+        go_to_each_detail_page = await browser.new_page()
         try:
-            logger.info(f"Visiting product page: {product['product_url']}")
-            await detail_page.goto(product["product_url"], timeout=15000)
-            await detail_page.wait_for_load_state("networkidle", timeout=10000)
+            logger.info(f"Visiting product page: {each_product_url['product_url']}")
+            await go_to_each_detail_page.goto(each_product_url["product_url"], timeout=15000)
+            await go_to_each_detail_page.wait_for_load_state("networkidle", timeout=10000)
             try:
-                await detail_page.wait_for_selector('[itemprop="description"]', timeout=5000)
-                description_elem = detail_page.locator('[itemprop="description"]').first
+                await go_to_each_detail_page.wait_for_selector('[itemprop="description"]', timeout=5000)
+                description_elem = go_to_each_detail_page.locator('[itemprop="description"]').first
                 description = await description_elem.inner_text()
-                product["description"] = description.strip() if description else "N/A"
+                each_product_url["description"] = description.strip() if description else "N/A"
             except PlaywrightTimeoutError:
-                logger.warning(f"Description element not found for: {product['product_url']}")
-                product["description"] = "N/A"
-            return product
+                logger.warning(f"Description element not found for: {each_product_url['product_url']}")
+                each_product_url["description"] = "N/A"
+            return each_product_url
 
         except Exception as e:
             logger.error(f"Error getting product description: {e}")
-            product["description"] = "N/A"
-            return product
+            each_product_url["description"] = "N/A"
+            return each_product_url
         finally:
-            await detail_page.close()
+            await go_to_each_detail_page.close()
 
     async def get_each_product_page_url(self, browser, items_cnt=0):
+        logger.info("***** get_each_product_page_url *****")
         final_data = []
         products_to_process = self.collected_laptops_data[items_cnt:2]
-        for idx, product in enumerate(products_to_process, start=items_cnt):
+        for idx, product_page_url in enumerate(products_to_process, start=items_cnt):
             try:
-                result = await self.get_product_description(browser, product.copy())
+                result = await self.get_product_description(browser, product_page_url.copy())
                 final_data.append(result)
                 logger.info(f"Processed product {idx + 1}/{len(products_to_process)}")
             except Exception as e:
-                logger.warning(f"Failed to get description for {product.get('product_url', 'Unknown URL')}: {e}")
-                product_copy = product.copy()
+                logger.warning(f"Failed to get description for {product_page_url.get('product_url', 'Unknown URL')}: {e}")
+                product_copy = product_page_url.copy()
                 product_copy["description"] = "N/A"
                 final_data.append(product_copy)
         logger.info(f"Collected {len(final_data)} products with descriptions.")
@@ -169,8 +172,11 @@ class LaptopsScraper:
 
 
 async def main():
-    # url = "https://webscraper.io/test-sites/e-commerce/static/computers/laptops"
+    logger.info("***** main function *****")
     url = "https://webscraper.io/test-sites/e-commerce/allinone/computers/laptops"
+
+    # you can try for pagination
+    # url = "https://webscraper.io/test-sites/e-commerce/static/computers/laptops"
 
     laptops_scraper = LaptopsScraper(url)
 
@@ -191,7 +197,6 @@ async def main():
         finally:
             await browser.close()
             logger.info("Browser closed.")
-
 
 if __name__ == "__main__":
     asyncio.run(main())
